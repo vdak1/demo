@@ -98,7 +98,16 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>io.con
+                                    <mainClass>io.confluent.developer.JoinStreamToTable</mainClass>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
 
 
 
