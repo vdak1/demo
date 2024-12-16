@@ -1,104 +1,107 @@
-import org.apache.flink.api.common.eventtime.WatermarkStrategy;
-import org.apache.flink.api.common.serialization.SimpleStringSchema;
-import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
-import org.apache.flink.table.api.EnvironmentSettings;
-import org.apache.flink.table.api.Table;
-import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
-import org.apache.flink.types.Row;
-import org.apache.flink.api.java.tuple.Tuple2;
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
 
-import java.util.Properties;
+    <groupId>com.example</groupId>
+    <artifactId>flink-kafka-join</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
 
-public class FlinkKafkaJoin {
-    public static void main(String[] args) throws Exception {
-        // Set up the streaming execution environment
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        EnvironmentSettings settings = EnvironmentSettings.newInstance()
-                .inStreamingMode()
-                .build();
-        StreamTableEnvironment tableEnv = StreamTableEnvironment.create(env, settings);
+    <name>Flink Kafka Join</name>
+    <description>A Flink application to join a Kafka KTable with a Stream</description>
 
-        // Kafka properties
-        Properties properties = new Properties();
-        properties.setProperty("bootstrap.servers", "localhost:9092");
-        properties.setProperty("group.id", "flink-group");
+    <properties>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+        <flink.version>1.17.1</flink.version>
+        <kafka.version>3.5.1</kafka.version>
+    </properties>
 
-        // Bank Accounts KTable source
-        FlinkKafkaConsumer<String> bankAccountsConsumer = new FlinkKafkaConsumer<>(
-                "bank_accounts",
-                new SimpleStringSchema(),
-                properties
-        );
-        DataStream<String> bankAccountsStream = env
-                .addSource(bankAccountsConsumer)
-                .name("Bank Accounts Stream");
+    <dependencies>
+        <!-- Flink Core Dependencies -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-streaming-java_2.12</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-table-api-java-bridge_2.12</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-table-planner_2.12</artifactId>
+            <version>${flink.version}</version>
+            <scope>provided</scope>
+        </dependency>
 
-        // Transactions Stream source
-        FlinkKafkaConsumer<String> transactionsConsumer = new FlinkKafkaConsumer<>(
-                "transactions",
-                new SimpleStringSchema(),
-                properties
-        );
-        DataStream<String> transactionsStream = env
-                .addSource(transactionsConsumer)
-                .name("Transactions Stream");
+        <!-- Flink Kafka Connector -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
 
-        // Convert streams to tables
-        tableEnv.executeSql(
-                "CREATE TABLE BankAccounts (" +
-                        "account_id STRING, " +
-                        "customer_name STRING, " +
-                        "balance DOUBLE, " +
-                        "PRIMARY KEY (account_id) NOT ENFORCED" +
-                        ") WITH (" +
-                        "'connector' = 'kafka', " +
-                        "'topic' = 'bank_accounts', " +
-                        "'properties.bootstrap.servers' = 'localhost:9092', " +
-                        "'format' = 'json', " +
-                        "'scan.startup.mode' = 'earliest-offset'" +
-                        ")"
-        );
+        <!-- JSON Support -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-json</artifactId>
+            <version>${flink.version}</version>
+        </dependency>
 
-        tableEnv.executeSql(
-                "CREATE TABLE Transactions (" +
-                        "transaction_id STRING, " +
-                        "account_id STRING, " +
-                        "amount DOUBLE, " +
-                        "timestamp BIGINT, " +
-                        "WATERMARK FOR timestamp AS TIMESTAMP_MILLIS(timestamp) - INTERVAL '5' SECOND" +
-                        ") WITH (" +
-                        "'connector' = 'kafka', " +
-                        "'topic' = 'transactions', " +
-                        "'properties.bootstrap.servers' = 'localhost:9092', " +
-                        "'format' = 'json', " +
-                        "'scan.startup.mode' = 'earliest-offset'" +
-                        ")"
-        );
+        <!-- Logging -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-log4j12</artifactId>
+            <version>1.7.36</version>
+        </dependency>
 
-        // Perform the join
-        Table joinedTable = tableEnv.sqlQuery(
-                "SELECT " +
-                        "t.transaction_id, " +
-                        "t.account_id, " +
-                        "b.customer_name, " +
-                        "b.balance, " +
-                        "t.amount, " +
-                        "t.timestamp " +
-                        "FROM Transactions AS t " +
-                        "JOIN BankAccounts FOR SYSTEM_TIME AS OF t.timestamp AS b " +
-                        "ON t.account_id = b.account_id"
-        );
+        <!-- Kafka Clients -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-clients</artifactId>
+            <version>${kafka.version}</version>
+        </dependency>
+    </dependencies>
 
-        // Convert the result table back to a data stream
-        DataStream<Tuple2<Boolean, Row>> resultStream = tableEnv.toChangelogStream(joinedTable);
+    <build>
+        <plugins>
+            <!-- Maven Compiler Plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.1</version>
+                <configuration>
+                    <source>11</source>
+                    <target>11</target>
+                </configuration>
+            </plugin>
 
-        // Output the joined results
-        resultStream.print();
-
-        // Execute the Flink job
-        env.execute("Flink Kafka KTable-Stream Join");
-    }
-}
+            <!-- Maven Shade Plugin -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.4.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <relocations>
+                                <relocation>
+                                    <pattern>org.apache.kafka</pattern>
+                                    <shadedPattern>shaded.kafka</shadedPattern>
+                                </relocation>
+                            </relocations>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
