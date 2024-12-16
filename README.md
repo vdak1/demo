@@ -1,107 +1,67 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 
-    <groupId>com.example</groupId>
-    <artifactId>flink-kafka-join</artifactId>
-    <version>1.0-SNAPSHOT</version>
-    <packaging>jar</packaging>
+import java.util.Properties;
+import java.util.Random;
+import java.util.concurrent.ExecutionException;
 
-    <name>Flink Kafka Join</name>
-    <description>A Flink application to join a Kafka KTable with a Stream</description>
+public class KafkaEventProducer {
+    private static final String BANK_ACCOUNTS_TOPIC = "bank_accounts";
+    private static final String TRANSACTIONS_TOPIC = "transactions";
+    private static final String BOOTSTRAP_SERVERS = "localhost:9092";
 
-    <properties>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <flink.version>1.17.1</flink.version>
-        <kafka.version>3.5.1</kafka.version>
-    </properties>
+    public static void main(String[] args) {
+        // Kafka producer properties
+        Properties properties = new Properties();
+        properties.put("bootstrap.servers", BOOTSTRAP_SERVERS);
+        properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
 
-    <dependencies>
-        <!-- Flink Core Dependencies -->
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-streaming-java_2.12</artifactId>
-            <version>${flink.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-table-api-java-bridge_2.12</artifactId>
-            <version>${flink.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-table-planner_2.12</artifactId>
-            <version>${flink.version}</version>
-            <scope>provided</scope>
-        </dependency>
+        // Initialize Kafka producer
+        KafkaProducer<String, String> producer = new KafkaProducer<>(properties);
 
-        <!-- Flink Kafka Connector -->
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-connector-kafka</artifactId>
-            <version>${flink.version}</version>
-        </dependency>
+        try {
+            // Produce events to bank_accounts topic
+            for (int i = 1; i <= 1_000_000; i++) {
+                String accountId = String.format("A%06d", i); // e.g., A000001, A000002
+                String customerName = "Customer" + i;
+                double balance = new Random().nextDouble() * 10000; // Random balance
 
-        <!-- JSON Support -->
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-json</artifactId>
-            <version>${flink.version}</version>
-        </dependency>
+                String accountEvent = String.format("{\"account_id\": \"%s\", \"customer_name\": \"%s\", \"balance\": %.2f}",
+                        accountId, customerName, balance);
 
-        <!-- Logging -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-log4j12</artifactId>
-            <version>1.7.36</version>
-        </dependency>
+                sendEvent(producer, BANK_ACCOUNTS_TOPIC, accountId, accountEvent);
+            }
 
-        <!-- Kafka Clients -->
-        <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka-clients</artifactId>
-            <version>${kafka.version}</version>
-        </dependency>
-    </dependencies>
+            // Produce events to transactions topic
+            for (int i = 1; i <= 16_000_000; i++) { // 16 transactions per 1 million accounts
+                String transactionId = "T" + i;
+                String accountId = String.format("A%06d", new Random().nextInt(1_000_000) + 1); // Random account ID
+                double amount = (new Random().nextDouble() - 0.5) * 200; // Random transaction (-100 to +100)
+                long timestamp = System.currentTimeMillis();
 
-    <build>
-        <plugins>
-            <!-- Maven Compiler Plugin -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.8.1</version>
-                <configuration>
-                    <source>11</source>
-                    <target>11</target>
-                </configuration>
-            </plugin>
+                String transactionEvent = String.format("{\"transaction_id\": \"%s\", \"account_id\": \"%s\", \"amount\": %.2f, \"timestamp\": %d}",
+                        transactionId, accountId, amount, timestamp);
 
-            <!-- Maven Shade Plugin -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.4.1</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <createDependencyReducedPom>false</createDependencyReducedPom>
-                            <relocations>
-                                <relocation>
-                                    <pattern>org.apache.kafka</pattern>
-                                    <shadedPattern>shaded.kafka</shadedPattern>
-                                </relocation>
-                            </relocations>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-</project>
+                sendEvent(producer, TRANSACTIONS_TOPIC, transactionId, transactionEvent);
+
+                // Sleep to simulate real-time events
+                if (i % 1000 == 0) {
+                    Thread.sleep(10);
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            producer.close();
+        }
+    }
+
+    private static void sendEvent(KafkaProducer<String, String> producer, String topic, String key, String value) throws ExecutionException, InterruptedException {
+        ProducerRecord<String, String> record = new ProducerRecord<>(topic, key, value);
+        RecordMetadata metadata = producer.send(record).get();
+        System.out.printf("Sent event to topic %s: key=%s, value=%s, partition=%d, offset=%d%n",
+                topic, key, value, metadata.partition(), metadata.offset());
+    }
+}
