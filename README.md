@@ -1,67 +1,62 @@
+package io.confluent.developer;
+
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.serialization.LongSerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 
 import java.util.Properties;
-import java.util.Random;
 import java.util.concurrent.ExecutionException;
 
-public class KafkaEventProducer {
-    private static final String BANK_ACCOUNTS_TOPIC = "bank_accounts";
-    private static final String TRANSACTIONS_TOPIC = "transactions";
-    private static final String BOOTSTRAP_SERVERS = "localhost:9092";
+public class KafkaInputProducer {
 
-    public static void main(String[] args) {
-        // Kafka producer properties
-        Properties properties = new Properties();
-        properties.put("bootstrap.servers", BOOTSTRAP_SERVERS);
-        properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-        properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+    private static final String MOVIE_INPUT_TOPIC = "movie-input";
+    private static final String RATING_INPUT_TOPIC = "ratings-input";
 
-        // Initialize Kafka producer
-        KafkaProducer<String, String> producer = new KafkaProducer<>(properties);
+    public static void main(String[] args) throws InterruptedException, ExecutionException {
+        Properties producerProps = new Properties();
+        producerProps.put("bootstrap.servers", "localhost:9092"); // Update with your Kafka broker address
+        producerProps.put("key.serializer", LongSerializer.class.getName());
+        producerProps.put("value.serializer", StringSerializer.class.getName());
+        producerProps.put("acks", "all");
 
-        try {
-            // Produce events to bank_accounts topic
-            for (int i = 1; i <= 1_000_000; i++) {
-                String accountId = String.format("A%06d", i); // e.g., A000001, A000002
-                String customerName = "Customer" + i;
-                double balance = new Random().nextDouble() * 10000; // Random balance
+        try (KafkaProducer<Long, String> producer = new KafkaProducer<>(producerProps)) {
+            // Send movie data
+            sendMovieData(producer);
 
-                String accountEvent = String.format("{\"account_id\": \"%s\", \"customer_name\": \"%s\", \"balance\": %.2f}",
-                        accountId, customerName, balance);
-
-                sendEvent(producer, BANK_ACCOUNTS_TOPIC, accountId, accountEvent);
-            }
-
-            // Produce events to transactions topic
-            for (int i = 1; i <= 16_000_000; i++) { // 16 transactions per 1 million accounts
-                String transactionId = "T" + i;
-                String accountId = String.format("A%06d", new Random().nextInt(1_000_000) + 1); // Random account ID
-                double amount = (new Random().nextDouble() - 0.5) * 200; // Random transaction (-100 to +100)
-                long timestamp = System.currentTimeMillis();
-
-                String transactionEvent = String.format("{\"transaction_id\": \"%s\", \"account_id\": \"%s\", \"amount\": %.2f, \"timestamp\": %d}",
-                        transactionId, accountId, amount, timestamp);
-
-                sendEvent(producer, TRANSACTIONS_TOPIC, transactionId, transactionEvent);
-
-                // Sleep to simulate real-time events
-                if (i % 1000 == 0) {
-                    Thread.sleep(10);
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        } finally {
-            producer.close();
+            // Send rating data
+            sendRatingData(producer);
         }
     }
 
-    private static void sendEvent(KafkaProducer<String, String> producer, String topic, String key, String value) throws ExecutionException, InterruptedException {
-        ProducerRecord<String, String> record = new ProducerRecord<>(topic, key, value);
-        RecordMetadata metadata = producer.send(record).get();
-        System.out.printf("Sent event to topic %s: key=%s, value=%s, partition=%d, offset=%d%n",
-                topic, key, value, metadata.partition(), metadata.offset());
+    private static void sendMovieData(KafkaProducer<Long, String> producer) throws InterruptedException, ExecutionException {
+        String[] movies = {
+            "{\"id\": 1, \"title\": \"The Shawshank Redemption\", \"genre\": \"Drama\"}",
+            "{\"id\": 2, \"title\": \"The Godfather\", \"genre\": \"Crime\"}",
+            "{\"id\": 3, \"title\": \"The Dark Knight\", \"genre\": \"Action\"}"
+        };
+
+        for (int i = 0; i < movies.length; i++) {
+            ProducerRecord<Long, String> record = new ProducerRecord<>(MOVIE_INPUT_TOPIC, (long) (i + 1), movies[i]);
+            RecordMetadata metadata = producer.send(record).get();
+            System.out.printf("Movie sent: key=%d value=%s to partition=%d offset=%d%n", 
+                              (long) (i + 1), movies[i], metadata.partition(), metadata.offset());
+        }
+    }
+
+    private static void sendRatingData(KafkaProducer<Long, String> producer) throws InterruptedException, ExecutionException {
+        String[] ratings = {
+            "{\"id\": 1, \"userId\": 101, \"rating\": 4.8}",
+            "{\"id\": 2, \"userId\": 102, \"rating\": 4.9}",
+            "{\"id\": 3, \"userId\": 103, \"rating\": 4.7}"
+        };
+
+        for (int i = 0; i < ratings.length; i++) {
+            ProducerRecord<Long, String> record = new ProducerRecord<>(RATING_INPUT_TOPIC, (long) (i + 1), ratings[i]);
+            RecordMetadata metadata = producer.send(record).get();
+            System.out.printf("Rating sent: key=%d value=%s to partition=%d offset=%d%n", 
+                              (long) (i + 1), ratings[i], metadata.partition(), metadata.offset());
+        }
     }
 }
